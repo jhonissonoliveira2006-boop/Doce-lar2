@@ -953,12 +953,14 @@ const antMat=new THREE.MeshLambertMaterial({color:0x35201a}),antHeadMat=new THRE
 const antAbd=new THREE.InstancedMesh(antBodyGeo,antMat,ANT_COUNT),antThorax=new THREE.InstancedMesh(antBodyGeo,antHeadMat,ANT_COUNT),antHead=new THREE.InstancedMesh(antBodyGeo,antHeadMat,ANT_COUNT),antLegs=new THREE.InstancedMesh(antLegGeo,antHeadMat,ANT_COUNT*6);
 for(const m of [antAbd,antThorax,antHead,antLegs]){m.frustumCulled=false;antGroup.add(m)}
 const leafCargoGeo=new THREE.SphereGeometry(1,8,6),stickCargoGeo=new THREE.CylinderGeometry(1,1,1,6),appleCargoGeo=new THREE.SphereGeometry(1,8,6);
+const cargoStemGeo=new THREE.CylinderGeometry(.004,.006,.025,5),cargoBranchGeo=new THREE.CylinderGeometry(.004,.006,1,5);
 const leafCargoMats=[0x58a83f,0x82bd43,0x399b55,0x9abf38,0x4f8d36].map(color=>new THREE.MeshLambertMaterial({color,side:THREE.DoubleSide}));
 const stickCargoMats=[0x795331,0x9a7046,0x60432e].map(color=>new THREE.MeshLambertMaterial({color}));
 const appleCargoMat=new THREE.MeshLambertMaterial({color:0xd84535}),appleStemMat=new THREE.MeshLambertMaterial({color:0x65452b});
 const antLabelCanvas=document.createElement('canvas');antLabelCanvas.width=64;antLabelCanvas.height=64;
 const alc=antLabelCanvas.getContext('2d');alc.fillStyle='#ffd23f';alc.beginPath();alc.arc(32,32,26,0,TAU);alc.fill();alc.fillStyle='#2b2f36';alc.font='bold 46px system-ui';alc.textAlign='center';alc.textBaseline='middle';alc.fillText('!',32,32);
 const antLabelTex=new THREE.CanvasTexture(antLabelCanvas),antStates=[];
+const antLabelMat=new THREE.SpriteMaterial({map:antLabelTex,transparent:true,depthTest:false});
 function setAntCargo(a,type){
  a.cargoType=type;a.cargoItem.geometry=type<5?leafCargoGeo:type<8?stickCargoGeo:appleCargoGeo;
  a.cargoItem.material=type<5?leafCargoMats[type]:type<8?stickCargoMats[type-5]:appleCargoMat;
@@ -979,9 +981,9 @@ function setAntCargo(a,type){
  }
 }
 for(let i=0;i<ANT_COUNT;i++){
- const label=new THREE.Sprite(new THREE.SpriteMaterial({map:antLabelTex,transparent:true,depthTest:false}));label.scale.set(.34,.34,1);label.visible=false;label.renderOrder=8;antGroup.add(label);
- const cargo=new THREE.Group(),cargoItem=new THREE.Mesh(leafCargoGeo,leafCargoMats[0]),cargoStem=new THREE.Mesh(new THREE.CylinderGeometry(.004,.006,.025,5),appleStemMat);
- const cargoBranches=[0,1].map(()=>new THREE.Mesh(new THREE.CylinderGeometry(.004,.006,1,5),stickCargoMats[0]));
+ const label=new THREE.Sprite(antLabelMat);label.scale.set(.34,.34,1);label.visible=false;label.renderOrder=8;antGroup.add(label);
+ const cargo=new THREE.Group(),cargoItem=new THREE.Mesh(leafCargoGeo,leafCargoMats[0]),cargoStem=new THREE.Mesh(cargoStemGeo,appleStemMat);
+ const cargoBranches=[0,1].map(()=>new THREE.Mesh(cargoBranchGeo,stickCargoMats[0]));
  cargoStem.position.y=.045;cargoBranches.forEach(b=>{b.visible=false;cargo.add(b)});cargo.add(cargoItem,cargoStem);cargo.visible=false;antGroup.add(cargo);
  const a={progress:i*ANT_LOOP/ANT_COUNT,state:'walk',timer:0,cool:0,label,x:0,z:0,y:0,yaw:0,cargo,cargoItem,cargoStem,cargoBranches,lap:0};
  setAntCargo(a,Math.floor(Math.random()*9));antStates.push(a);
@@ -3059,5 +3061,3 @@ window.openMic=openMic;window.voiceIn=voiceIn;
 })();
 // ================= FIM CHAT DE VOZ =================
 </script></body></html>
-
-
