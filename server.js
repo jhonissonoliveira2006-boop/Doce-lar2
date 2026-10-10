@@ -1,6 +1,8 @@
 const express=require('express'),http=require('http'),path=require('path'),fs=require('fs');
 const {WebSocketServer}=require('ws');
 const app=express();app.use(express.json());
+// libera o microfone para o próprio site (voz)
+app.use((req,res,next)=>{res.setHeader('Permissions-Policy','microphone=(self)');next()});
 app.use(express.static(path.join(__dirname,'public')));
 
 const FILE=process.env.DATA_FILE||path.join(__dirname,'rooms.json');
@@ -22,7 +24,7 @@ app.post('/api/create',(req,res)=>{
 app.get('/api/exists/:code',(req,res)=>res.json({ok:!!rooms[String(req.params.code).toUpperCase()]}));
 
 const server=http.createServer(app);
-const wss=new WebSocketServer({server,path:'/ws'});
+const wss=new WebSocketServer({server,path:'/ws',maxPayload:64*1024});
 const live={};let nextId=1;
 
 wss.on('connection',(ws,req)=>{
@@ -41,8 +43,8 @@ wss.on('connection',(ws,req)=>{
       const out=JSON.stringify({t:'s',id,...s});
       for(const w of room.values())if(w!==ws&&w.readyState===1)w.send(out);
     }else if(m.t==='v'){
-      if(typeof m.d==='string'){
-        const out=JSON.stringify({t:'v',id,r:+m.r||16000,d:m.d});
+      if(typeof m.d==='string'&&m.d.length<=16000){
+        const out=JSON.stringify({t:'v',id,r:(+m.r>=8000&&+m.r<=48000)?+m.r:16000,d:m.d});
         for(const w of room.values())if(w!==ws&&w.readyState===1)w.send(out);
       }
     }else if(m.t==='chat'){
