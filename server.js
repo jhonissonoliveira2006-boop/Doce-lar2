@@ -45,8 +45,16 @@ wss.on('connection',(ws,req)=>{
         const out=JSON.stringify({t:'v',id,r:+m.r||16000,d:m.d});
         for(const w of room.values())if(w!==ws&&w.readyState===1)w.send(out);
       }
+    }else if(m.t==='chat'){
+      // Tratamento e retransmissão segura da mensagem de chat
+      const msg = String(m.msg || '').trim().slice(0, 120);
+      if(msg){
+        const out = JSON.stringify({t:'chat', id, msg});
+        for(const w of room.values()) if(w !== ws && w.readyState === 1) w.send(out);
+      }
     }
   });
+
   ws.on('close',()=>{
     room.delete(id);
     const out=JSON.stringify({t:'l',id});
@@ -54,5 +62,6 @@ wss.on('connection',(ws,req)=>{
     if(!room.size)delete live[code];
   });
 });
+
 setInterval(()=>wss.clients.forEach(w=>w.readyState===1&&w.ping()),30000);
 server.listen(process.env.PORT||3000,()=>console.log('rodando'));
