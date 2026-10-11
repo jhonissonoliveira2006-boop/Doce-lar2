@@ -1,5 +1,18 @@
-// Doce Lar · ANIMAIS E MOBS (patos, peixes, sapos, libélulas, borboletas, vagalumes, formigas, passarinhos)
-// Carregado pelo index.html DEPOIS do script principal. Não mude a ordem das tags <script>.
+// ============================================================================
+//  ANIMAIS — criaturas e suas programações
+//  Patos (modelo, quack, comportamento) · peixes e sapinhos do lago · libélulas ·
+//  borboletas · vagalumes · formiguinhas · passarinhos (incluindo o carinho).
+//
+//  Carregado DEPOIS do index.html (usa scene, worldG, terrainH, pos, lake*, etc.
+//  definidos lá) e antes de minijogos.js. O index chama, a cada quadro:
+//    updateLake → lkUpdateDuck / faunaUpdate / dragonUpdate / insectsTick,
+//    updateFlies, updateAnts, updateBirds, birdPetPose, birdCam.
+//  Obs.: o motor de áudio compartilhado (AC/master/unlock) e os sons de passos
+//  (SFX) ficam no index.html, porque o personagem depende deles.
+//  Obs.: "updateAnts" aparece duas vezes (a 2ª versão é a que vale; a 1ª é código
+//  antigo que ficou no arquivo original — mantido para não alterar o comportamento).
+// ============================================================================
+
 // ---------- patos: modelo ----------
 const lkMat=c=>new THREE.MeshLambertMaterial({color:c});
 const LK_DM={
@@ -16,18 +29,19 @@ function lkMkAdult(male){
  lkPart(inner,lkSph,back,.20,.11,.34,0,.19,-.06);
  lkPart(inner,lkSph,breast,.19,.19,.19,0,.12,.27);
  const tail=lkPart(inner,lkCone,male?D.mTail:D.fBack,.08,.27,.05,0,.2,-.44);tail.rotation.x=-1.2;
+ const wings=[];
  for(const s of [-1,1]){
-  const w=lkPart(inner,lkSph,male?D.mWing:D.fWing,.045,.12,.28,s*.205,.17,-.06);w.rotation.z=s*.18;
+  const w=lkPart(inner,lkSph,male?D.mWing:D.fWing,.045,.12,.28,s*.205,.17,-.06);w.rotation.z=s*.18;wings.push({m:w,s});
   if(!male){const sp=lkPart(inner,lkSph,D.spec,.012,.045,.075,s*.236,.165,-.17);sp.rotation.z=s*.18}
  }
- const neck=new THREE.Group();neck.position.set(0,.2,.3);inner.add(neck);
+ const neck=new THREE.Group();neck.position.set(0,.2,.3);neck.rotation.order='YXZ';inner.add(neck);   // YXZ: inclina e depois gira (o pescoço pode virar para trás já inclinado)
  lkPart(neck,lkSph,headM,.085,.17,.085,0,.14,.02).rotation.x=.15;
  if(male)lkPart(neck,lkSph,D.mRing,.095,.03,.095,0,.07,.01);
  const head=new THREE.Group();head.position.set(0,.31,.05);neck.add(head);
  lkPart(head,lkSph,headM,.115,.105,.125,0,0,0);
  lkPart(head,lkSph,bill,.055,.022,.10,0,-.022,.14);
  for(const s of [-1,1])lkPart(head,lkSph,D.eye,.02,.02,.02,s*.075,.03,.07);
- return {g,inner,neck,head,tail};
+ return {g,inner,neck,head,tail,wings};
 }
 function lkMkChick(){
  const D=LK_DM,g=new THREE.Group(),inner=new THREE.Group();g.add(inner);
@@ -103,6 +117,7 @@ function lkPickTarget(d,shore){
  d.tx=best[0];d.tz=best[1];
 }
 function lkFlee(d){
+ d.preen=0;
  const a0=Math.atan2(d.x-pos.x,d.z-pos.z);
  for(let k=0;k<10;k++){
   const a=a0+(Math.random()-.5)*1.2,r=6+Math.random()*3,tx=d.x+Math.sin(a)*r,tz=d.z+Math.cos(a)*r;
@@ -129,14 +144,14 @@ function lkSendChick(d,c){
  return true;
 }
 function lkCall(d){
- d.call=1.5;d.callT=null;d.wait=3.5;d.waitBack=true;d.leaveT=lkRnd(4,9);
+ d.preen=0;d.call=1.5;d.callT=null;d.wait=3.5;d.waitBack=true;d.leaveT=lkRnd(4,9);
  lkQuack(d.x,d.z,d.pitch);
  for(const c of d.chicks)if(c.state==='away'){c.state='back';c.mark=1.5}
 }
 function lkSpawnDuck(x,z,yaw,brood){
  const male=!brood&&Math.random()<.5,a=lkMkAdult(male);
  const d={a,x,z,yaw,v:0,tx:x,tz:z,idle:lkRnd(.3,2),dab:0,call:0,wait:0,waitBack:false,flee:0,cool:0,ph:lkRnd(0,6.28),male,
-  trail:[],ripT:lkRnd(0,.5),chicks:[],leaveT:lkRnd(3,8),callT:null,pitch:lkRnd(.9,1.12)};
+  trail:[],ripT:lkRnd(0,.5),chicks:[],leaveT:lkRnd(3,8),callT:null,pitch:lkRnd(.9,1.12),preen:0,pt:0,pdur:1,pside:1,pcool:lkRnd(2,12)};
  for(let i=0;i<70;i++)d.trail.push({x:x-Math.sin(yaw)*i*.12,z:z-Math.cos(yaw)*i*.12});
  if(brood){
   const n=2+Math.floor(Math.random()*3);          // de 2 a 4 filhotes enfileirados atrás da mãe
@@ -144,7 +159,7 @@ function lkSpawnDuck(x,z,yaw,brood){
    const m=lkMkChick(),spr=new THREE.Sprite(new THREE.SpriteMaterial({map:LK_EXC,transparent:true,depthTest:false,depthWrite:false,fog:false}));
    spr.visible=false;spr.renderOrder=10;spr.scale.set(.5,.5,1);LKG.add(spr);LKG.add(m.g);
    const p=lkTrailAt(d,.72+i*.6);
-   d.chicks.push({m,spr,i,x:p[0],z:p[1],yaw,state:'line',tx:p[0],tz:p[1],sp:.9,idle:0,pecking:false,mark:0,rip:0,ph:lkRnd(0,6.28)});
+   d.chicks.push({m,spr,i,x:p[0],z:p[1],yaw,state:'line',tx:p[0],tz:p[1],sp:.9,idle:0,pecking:false,mark:0,rip:0,fear:0,ph:lkRnd(0,6.28)});
   }
  }
  LKG.add(a.g);LK_DUCKS.push(d);
@@ -162,15 +177,22 @@ function lkSpawnDuck(x,z,yaw,brood){
  }
 })();
 
+// há um peixe grande (len >= 1.2) até r metros de (x,z)?
+function lkBigFishNear(x,z,r){const r2=r*r;for(const f of FAU.fish){if(f.len<1.2)continue;const dx=f.x-x,dz=f.z-z;if(dx*dx+dz*dz<r2)return true}return false}
 function lkUpdateDuck(d,dt,t){
  const WL=LAKE.WL,dp=Math.hypot(d.x-pos.x,d.z-pos.z),a=d.a,brood=d.chicks.length>0;
  if(dp>95){a.g.visible=false;for(const c of d.chicks){c.m.g.visible=false;c.spr.visible=false}return}
  a.g.visible=true;for(const c of d.chicks)c.m.g.visible=true;
- d.cool-=dt;d.wait-=dt;d.dab-=dt;d.call-=dt;d.flee-=dt;
+ d.cool-=dt;d.wait-=dt;d.dab-=dt;d.call-=dt;d.flee-=dt;d.pcool-=dt;
+ if(d.preen>0){d.preen-=dt;d.pt+=dt}
  if(dp<5.2&&d.cool<=0){lkFlee(d);d.cool=1.2}
+ // de vez em quando, parado, o pato se limpa: vira o pescoço para trás, abaixa a cabeça e ergue uma asa
+ if(d.preen<=0&&d.pcool<=0&&d.idle>.8&&d.v<.25&&d.call<=0&&d.dab<=0&&!d.waitBack&&d.flee<=0&&dp>7&&Math.random()<dt*.5){
+  d.pdur=lkRnd(3.4,5.2);d.preen=d.pdur;d.pt=0;d.pside=Math.random()<.5?-1:1;d.pcool=lkRnd(9,26);d.idle=Math.max(d.idle,d.pdur+.4);
+ }
  // movimento
  let speed=0;
- if(d.call>0||d.waitBack||d.dab>0){speed=0}
+ if(d.call>0||d.waitBack||d.dab>0||d.preen>0){speed=0}
  else if(d.idle>0){d.idle-=dt;if(d.idle<=0)lkPickTarget(d,false)}
  else{
   const dist=Math.hypot(d.tx-d.x,d.tz-d.z);
@@ -188,7 +210,7 @@ function lkUpdateDuck(d,dt,t){
  if(brood){
   const l=d.trail[0];
   if(Math.hypot(d.x-l.x,d.z-l.z)>.12){d.trail.unshift({x:d.x,z:d.z});if(d.trail.length>90)d.trail.length=90}
-  let nBack=0,nLine=0;for(const c of d.chicks){if(c.state==='back')nBack++;else if(c.state==='line')nLine++}
+  let nBack=0,nLine=0,nAway=0;for(const c of d.chicks){if(c.state==='back')nBack++;else if(c.state==='line')nLine++;else nAway++}
   if(d.callT===null){
    if(!nBack){
     d.leaveT-=dt;
@@ -202,33 +224,42 @@ function lkUpdateDuck(d,dt,t){
    }
   }else{
    d.callT-=dt;
+   if(!nAway&&!nBack)d.callT=null;   // todos já voltaram (ex.: fugiram de um peixe): a mãe não precisa chamar
    if(nLine&&Math.random()<dt*.10){const cand=d.chicks.filter(c=>c.state==='line');lkSendChick(d,cand[Math.floor(Math.random()*cand.length)])}
-   if(d.callT<=0)lkCall(d);
+   if(d.callT!==null&&d.callT<=0)lkCall(d);
   }
   if(d.waitBack&&(!nBack||d.wait<=0)&&d.call<=0)d.waitBack=false;
  }
  // aparência do adulto
  const bob=Math.sin(t*1.5+d.ph)*.012;
  a.g.position.set(d.x,WL+.045+bob,d.z);a.g.rotation.y=d.yaw;
- let nk=Math.sin(t*.7+d.ph)*0,hd=0,pitch=0,ny=Math.sin(t*.7+d.ph)*.22;
+ let nk=Math.sin(t*.7+d.ph)*0,hd=0,pitch=0,ny=Math.sin(t*.7+d.ph)*.22,pr=0;
  if(d.call>0){
   const ph=1.5-d.call,pulse=ph<.7?Math.pow(Math.max(0,Math.sin(ph/.21*Math.PI)),2):0,up=Math.min(1,ph/.15)*Math.min(1,d.call/.3);
   nk=-.42*up;hd=-(.35+.25*pulse)*up;ny=0;pitch=-.06*up;
  }else if(d.dab>0){
   const k=Math.sin(Math.min(1,Math.max(0,(1.4-d.dab)/1.4))*Math.PI);
   pitch=.85*k;nk=.7*k;hd=.5*k;ny=0;
+ }else if(d.preen>0){   // se limpando: entra e sai suavemente; "bicadinhas" entre as penas
+  const e=d.pt,k0=Math.min(1,e/.7)*Math.min(1,Math.max(0,d.preen/.7)),k=k0*k0*(3-2*k0),nib=Math.sin(e*11)*.14*k,sl=Math.sin(e*2.1)*.22*k;
+  nk=1.3*k+nib*.5;hd=.45*k+nib;ny=d.pside*(2.7+sl)*k;pitch=-.04*k;pr=k;
  }else if(d.v>.1){nk=Math.sin(t*4+d.ph)*.04*d.v;pitch=.03}
  a.inner.rotation.x+=(pitch-a.inner.rotation.x)*damp(10,dt);
  a.inner.rotation.z=Math.sin(t*1.1+d.ph)*.035;
  a.neck.rotation.x+=(nk-a.neck.rotation.x)*damp(12,dt);
- a.neck.rotation.y+=(ny-a.neck.rotation.y)*damp(3,dt);
+ a.neck.rotation.y+=(ny-a.neck.rotation.y)*damp(d.preen>0?7:3,dt);
  a.head.rotation.x+=(hd-a.head.rotation.x)*damp(12,dt);
  a.tail.rotation.z=Math.sin(t*5+d.ph)*(d.v>.1?.14:.05);
+ for(const w of a.wings){const r=(d.pside===w.s)?pr:0;w.m.rotation.z=w.s*(.18-1.0*r);w.m.position.y=.17+.05*r;w.m.position.x=w.s*(.205+.035*r)}   // a asa do lado da limpeza sobe
  d.ripT-=dt;
  if(d.v>.2&&d.ripT<=0){lkRipple(d.x-Math.sin(d.yaw)*.35,d.z-Math.cos(d.yaw)*.35,1.5,1.6);d.ripT=.55}
  // filhotes
  for(const c of d.chicks){
   const m=c.m,slot=lkTrailAt(d,.72+c.i*.6);let moving=0;c.pecking=false;
+  if(c.state==='away'){   // explorando: se topar com um peixe grande, leva um susto ("!") e volta nadando para a mãe, sem esperar o chamado
+   c.fear-=dt;
+   if(c.fear<=0&&lkBigFishNear(c.x,c.z,1.9)){c.state='back';c.mark=1.5;c.fear=4;c.pecking=false;lkRipple(c.x,c.z,.7,1.0)}
+  }
   if(c.state==='line'){
    const k=1-Math.exp(-6*dt),ox=c.x,oz=c.z;
    c.x+=(slot[0]-c.x)*k;c.z+=(slot[1]-c.z)*k;
@@ -467,20 +498,23 @@ const dfWR=new THREE.PlaneGeometry(.27,.07);dfWR.rotateX(-Math.PI/2);dfWR.transl
 const dfWL=new THREE.PlaneGeometry(.27,.07);dfWL.rotateX(-Math.PI/2);dfWL.translate(-.14,0,0);
 const dfWM=new THREE.MeshBasicMaterial({color:0xe4f6ff,transparent:true,opacity:.5,depthWrite:false,side:THREE.DoubleSide});
 const dfCols=[0x2f9be0,0xe0483a,0x38b56a,0xf0a030,0x2fc7c0];
-const dfAb=new THREE.CylinderGeometry(.011,.007,.34,6);dfAb.rotateX(Math.PI/2);dfAb.translate(0,0,-.2);
+// abdômen em 4 segmentos encadeados: o corpo fica reto, mas o rabinho consegue se curvar para baixo (tocar a água)
+const DF_SEG=4,DF_SL=.085,dfAbG=[];
+for(let i=0;i<DF_SEG;i++){const g=new THREE.CylinderGeometry(.011-.001*i,.011-.001*(i+1),DF_SL,6);g.rotateX(Math.PI/2);g.translate(0,0,-DF_SL/2);dfAbG.push(g)}
 const dfTh=new THREE.SphereGeometry(.036,8,6),dfHd=new THREE.SphereGeometry(.03,8,6),dfEy=new THREE.SphereGeometry(.02,6,5);
 function mkDragonfly(){
  const g=new THREE.Group(),col=dfCols[Math.floor(Math.random()*dfCols.length)];
  const bm=new THREE.MeshLambertMaterial({color:col}),dk=new THREE.MeshLambertMaterial({color:0x232b36}),ey=new THREE.MeshLambertMaterial({color:0x1f6f8f});
  const inner=new THREE.Group();g.add(inner);
- inner.add(new THREE.Mesh(dfAb,bm));
+ const segs=[];let par=inner;
+ for(let i=0;i<DF_SEG;i++){const sg=new THREE.Group();sg.position.set(0,0,i===0?-.03:-DF_SL);par.add(sg);sg.add(new THREE.Mesh(dfAbG[i],bm));segs.push(sg);par=sg}
  const th=new THREE.Mesh(dfTh,dk);th.scale.set(1,.95,1.3);inner.add(th);
  const hd=new THREE.Mesh(dfHd,bm);hd.position.set(0,0,.07);inner.add(hd);
  for(const s of [-1,1]){const e=new THREE.Mesh(dfEy,ey);e.position.set(s*.02,.012,.08);inner.add(e)}
  const wings=[];
  for(let k=0;k<4;k++){const w=new THREE.Mesh(k%2===0?dfWR:dfWL,dfWM);w.position.set(0,.025,k<2?.035:-.01);w.renderOrder=3;inner.add(w);wings.push(w)}
  g.rotation.order='YXZ';g.scale.setScalar(1.35);g.visible=false;LKG.add(g);
- return {g,inner,wings,x:0,y:0,z:0,vx:0,vy:0,vz:0,yaw:Math.random()*TAU,st:'hover',timer:1,tx:0,ty:0,tz:0,ph:Math.random()*6,sp:3.2+Math.random()*2.4,ok:false};
+ return {g,inner,wings,segs,bd:0,dn:0,tt:0,lu:0,x:0,y:0,z:0,vx:0,vy:0,vz:0,yaw:Math.random()*TAU,st:'hover',timer:1,tx:0,ty:0,tz:0,ph:Math.random()*6,sp:3.2+Math.random()*2.4,ok:false};
 }
 function dfSpawnPt(){
  for(let n=0;n<40;n++){
@@ -498,6 +532,14 @@ function dfGoal(d){   // novo ponto de voo: sempre perto do lago
  }
  d.tx=d.x;d.tz=d.z;d.ty=Math.max(d.y,W+.6);return false;
 }
+function dfDipPick(d){   // ponto sobre a água, perto, onde a libélula vai tocar a superfície com a ponta do abdômen
+ for(let n=0;n<14;n++){
+  const x=d.x+(Math.random()-.5)*12,z=d.z+(Math.random()-.5)*12;
+  if(x<LAKE.x0+4||x>LAKE.x1-4||lakeL(x,z)<3||lkBlock(x,z,.6))continue;
+  d.tx=x;d.tz=z;d.ty=LAKE.WL+.36;return true;
+ }
+ return false;
+}
 function dfPerchPick(d){   // pousa em taboas, gramas do lago ou vitórias-régias
  const c=[],W=LAKE.WL;
  const scan=(m,top,fn)=>{for(const a of m.values())for(let i=0;i<a.length;i+=5){
@@ -511,6 +553,18 @@ function dfPerchPick(d){   // pousa em taboas, gramas do lago ou vitórias-régi
 function dfUpdate(d,dt,t){
  const W=LAKE.WL;d.timer-=dt;
  let dx=0,dy=0,dz=0,spd=0;
+ if(d.st==='touch'){   // paira e vai e volta: desce até a ponta do abdômen tocar a água, solta uma ondinha e sobe
+  d.vx+=(Math.sin(t*1.9+d.ph)*.12-d.vx)*damp(5,dt);d.vz+=(Math.cos(t*1.6+d.ph)*.12-d.vz)*damp(5,dt);d.vy=0;
+  d.x+=d.vx*dt;d.z+=d.vz*dt;
+  const P=.6,pu=((d.tt+=dt)%P)/P;
+  d.y=d.ty+.17*(pu<.35?.5+.5*Math.cos(Math.PI*pu/.35):.5-.5*Math.cos(Math.PI*(pu-.35)/.65));
+  if(d.lu<.35&&pu>=.35){
+   lkRipple(d.x-Math.sin(d.yaw)*.31,d.z-Math.cos(d.yaw)*.31,.34,.95);
+   if(--d.dn<=0){d.st='hover';d.timer=.6+Math.random()*1.5}
+  }
+  d.lu=pu;
+  return dfPose(d,dt,t);
+ }
  if(d.st==='sit'){
   if(d.timer<=0){d.st='dash';dfGoal(d);d.timer=3}
  }else if(d.st==='hover'){   // parada no ar, só tremendo de leve
@@ -518,17 +572,19 @@ function dfUpdate(d,dt,t){
   if(d.timer<=0){
    const r=Math.random();
    if(r<.3){const p=dfPerchPick(d);if(p){d.st='land';d.tx=p[0];d.ty=p[1];d.tz=p[2];d.timer=8;return dfMove(d,dt,t)}}
+   if(r>=.3&&r<.52&&dfDipPick(d)){d.st='dip';d.timer=7;return dfMove(d,dt,t)}
    dfGoal(d);d.st='dash';d.timer=3;
   }
  }else{   // dash (disparada) ou land (pouso)
   dx=d.tx-d.x;dy=d.ty-d.y;dz=d.tz-d.z;const dist=Math.hypot(dx,dy,dz)||1e-4;
-  const land=d.st==='land';
-  spd=land?Math.min(d.sp*.5,dist*2+.2):Math.min(d.sp*(1+.35*Math.sin(t*9+d.ph)),dist*2.8+.5);
-  const j=land?0:Math.sin(t*7+d.ph)*.7;   // zigue-zague
-  const vxT=dx/dist*spd+(-dz/dist)*j,vyT=dy/dist*spd+Math.sin(t*11+d.ph)*.25*(land?0:1),vzT=dz/dist*spd+(dx/dist)*j,a=damp(land?4:6,dt);
+  const land=d.st==='land',dip=d.st==='dip';
+  spd=land?Math.min(d.sp*.5,dist*2+.2):dip?Math.min(d.sp*.75,dist*2.2+.3):Math.min(d.sp*(1+.35*Math.sin(t*9+d.ph)),dist*2.8+.5);
+  const j=(land||dip)?0:Math.sin(t*7+d.ph)*.7;   // zigue-zague
+  const vxT=dx/dist*spd+(-dz/dist)*j,vyT=dy/dist*spd+Math.sin(t*11+d.ph)*.25*((land||dip)?0:1),vzT=dz/dist*spd+(dx/dist)*j,a=damp(land?4:6,dt);
   d.vx+=(vxT-d.vx)*a;d.vy+=(vyT-d.vy)*a;d.vz+=(vzT-d.vz)*a;
   if(land&&dist<.12){d.st='sit';d.x=d.tx;d.y=d.ty;d.z=d.tz;d.vx=d.vy=d.vz=0;d.timer=4+Math.random()*8;d.yaw=Math.random()*TAU;return dfPose(d,dt,t)}
-  if(!land&&(dist<.45||d.timer<=0)){d.st=Math.random()<.8?'hover':'dash';if(d.st==='hover'){d.timer=.5+Math.random()*2}else{dfGoal(d);d.timer=3}}
+  if(dip){if(dist<.22){d.st='touch';d.dn=2+Math.floor(Math.random()*3);d.tt=0;d.lu=0;d.vx=d.vy=d.vz=0}else if(d.timer<=0){d.st='hover';d.timer=1}}
+  else if(!land&&(dist<.45||d.timer<=0)){d.st=Math.random()<.8?'hover':'dash';if(d.st==='hover'){d.timer=.5+Math.random()*2}else{dfGoal(d);d.timer=3}}
   else if(land&&d.timer<=0){d.st='hover';d.timer=1}
  }
  dfMove(d,dt,t);
@@ -544,10 +600,12 @@ function dfPose(d,dt,t){
  const sp=Math.hypot(d.vx,d.vz);
  if(d.st!=='sit'&&sp>.6){const ty=Math.atan2(d.vx,d.vz);d.yaw+=(((ty-d.yaw+Math.PI)%TAU+TAU)%TAU-Math.PI)*damp(9,dt)}
  else if(d.st==='hover')d.yaw+=Math.sin(t*.7+d.ph)*dt*.6;
- const sit=d.st==='sit';
+ const sit=d.st==='sit',dipping=d.st==='dip'||d.st==='touch';
+ const bt=dipping?1:(sit?.12:0);d.bd+=(bt-d.bd)*damp(5,dt);
+ for(const sg of d.segs)sg.rotation.x=-.35*d.bd;   // curva o rabinho para baixo; o corpo continua reto
  d.g.position.set(d.x,d.y,d.z);
- d.g.rotation.set(sit?-.3:-clamp(d.vy*.12,-.5,.5),d.yaw,0);
- const a=sit?.04+Math.sin(t*1.3+d.ph)*.02:Math.sin(t*(d.st==='hover'?64:52)+d.ph)*.55+.1;
+ d.g.rotation.set(sit?-.3:dipping?0:-clamp(d.vy*.12,-.5,.5),d.yaw,0);
+ const a=sit?.04+Math.sin(t*1.3+d.ph)*.02:Math.sin(t*(d.st==='hover'||d.st==='touch'?64:52)+d.ph)*.55+.1;
  d.wings[0].rotation.z=a;d.wings[1].rotation.z=-a;d.wings[2].rotation.z=-a*.85;d.wings[3].rotation.z=a*.85;
 }
 function dragonUpdate(dt){
@@ -565,24 +623,27 @@ function dragonUpdate(dt){
 }
 
 // ---- borboletas ----
-function bflyTex(c1,c2,c3){
+// asas de UMA cor só (com contorno mais escuro da mesma cor), em 3 formatos: 0 clássica · 1 rabo-de-andorinha (cauda na asa de trás) · 2 redondinha
+function bflyTex(hex,v){
  const cv=document.createElement('canvas');cv.width=128;cv.height=160;const x=cv.getContext('2d');
- const p=()=>{x.beginPath();x.moveTo(2,86);x.bezierCurveTo(10,30,70,2,122,26);x.bezierCurveTo(128,62,100,84,70,88);x.bezierCurveTo(112,98,112,150,66,150);x.bezierCurveTo(30,152,6,120,2,90);x.closePath()};
- p();const g=x.createLinearGradient(0,0,128,0);g.addColorStop(0,c2);g.addColorStop(.55,c1);g.addColorStop(1,c1);x.fillStyle=g;x.fill();
- x.save();p();x.clip();x.fillStyle=c3;
- for(const q of [[96,38,9],[80,62,6],[104,60,5],[72,124,8],[48,108,5],[90,112,5]]){x.beginPath();x.arc(q[0],q[1],q[2],0,TAU);x.fill()}
- x.restore();p();x.lineWidth=5;x.strokeStyle='#2b1c25';x.stroke();
+ const shape=[
+  ()=>{x.moveTo(2,86);x.bezierCurveTo(10,30,70,2,122,26);x.bezierCurveTo(128,62,100,84,70,88);x.bezierCurveTo(112,98,112,150,66,150);x.bezierCurveTo(30,152,6,120,2,90);x.closePath()},
+  ()=>{x.moveTo(2,84);x.bezierCurveTo(14,36,78,2,126,8);x.bezierCurveTo(116,46,98,74,72,88);x.bezierCurveTo(104,98,112,120,92,134);x.lineTo(78,158);x.lineTo(66,136);x.bezierCurveTo(48,146,16,134,2,92);x.closePath()},
+  ()=>{x.moveTo(2,80);x.bezierCurveTo(2,30,56,8,100,22);x.bezierCurveTo(128,34,126,72,94,86);x.bezierCurveTo(124,96,126,134,96,148);x.bezierCurveTo(66,160,18,150,2,100);x.closePath()}
+ ][v];
+ x.beginPath();shape();x.lineJoin='round';x.lineWidth=7;x.strokeStyle='#'+new THREE.Color(hex).multiplyScalar(.6).getHexString();x.stroke();
+ x.fillStyle=hex;x.fill();
  return new THREE.CanvasTexture(cv);
 }
-const BF_MATS=[['#ff9a3c','#ffd27a','#fff4d6'],['#ffe45c','#fff3a8','#ffffff'],['#5aa8ff','#a9d4ff','#ffffff'],['#ff8fb8','#ffd0e2','#ffffff'],['#f5f1e8','#ffffff','#ffd9a0']]
- .map(c=>new THREE.MeshBasicMaterial({map:bflyTex(c[0],c[1],c[2]),transparent:true,alphaTest:.35,side:THREE.DoubleSide}));
+const BF_COLS=['#ff9a3c','#ffe45c','#5aa8ff','#ff8fb8','#f5f1e8'];
+const BF_MATS=[];for(const c of BF_COLS)for(let v=0;v<3;v++)BF_MATS.push(new THREE.MeshBasicMaterial({map:bflyTex(c,v),transparent:true,alphaTest:.35,side:THREE.DoubleSide}));   // 5 cores x 3 formatos
 const bfGeo=(()=>{const g=new THREE.PlaneGeometry(.3,.36);g.rotateX(Math.PI/2);g.translate(.15,0,0);return g})();
 const bfBody=new THREE.CylinderGeometry(.014,.01,.16,6);bfBody.rotateX(Math.PI/2);
 const bfBodyM=new THREE.MeshLambertMaterial({color:0x2b2128});
 function mkButterfly(){
  const g=new THREE.Group(),m=BF_MATS[Math.floor(Math.random()*BF_MATS.length)];
  const wr=new THREE.Mesh(bfGeo,m),wl=new THREE.Mesh(bfGeo,m);wl.scale.x=-1;
- const bd=new THREE.Mesh(bfBody,bfBodyM);g.add(bd,wr,wl);g.rotation.order='YXZ';g.scale.setScalar(.8+Math.random()*.4);g.visible=false;worldG.add(g);
+ const bd=new THREE.Mesh(bfBody,bfBodyM);g.add(bd,wr,wl);g.rotation.order='YXZ';g.scale.setScalar(.56+Math.random()*.26);g.visible=false;worldG.add(g);
  return {g,wr,wl,x:0,y:0,z:0,px:0,pz:0,yaw:Math.random()*TAU,st:'flit',timer:5,fx:0,fy:0,fz:0,ph:Math.random()*6,om:19+Math.random()*6,ok:false};
 }
 function bfFlower(x,z,rMin,rMax){   // sorteia uma flor entre rMin e rMax de distância
@@ -634,7 +695,6 @@ function butterflyUpdate(dt){
  }catch(e){console.error('butterflies',e);INS.err++}
 }
 function insectsTick(dt){INS.t+=Math.min(dt,.05);butterflyUpdate(dt)}
-
 // ---------- vagalumes: flutuam devagar, como numa noite de verão ----------
 const FF_N=170,FF_R=24;
 const ffU={uTime:{value:0},uC:{value:new THREE.Vector3()},uAmt:{value:0}};
@@ -1027,17 +1087,6 @@ function mkBirdMesh(col){
  const sh=new THREE.Mesh(gSh,mSh.clone());sh.renderOrder=2;
  return {g,inner,body,belly,head,tail,wr,wl,sh};
 }
-// ---------- som ----------
-let AC=null,master=null;
-function unlock(){
- try{
-  if(!AC){const C=window.AudioContext||window.webkitAudioContext;if(!C)return;AC=new C();
-   const comp=AC.createDynamicsCompressor();const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=5200;
-   master=AC.createGain();master.gain.value=1;master.connect(lp);lp.connect(comp);comp.connect(AC.destination)}
-  if(AC.state!=='running')AC.resume()
- }catch(e){}
-}
-for(const ev of ['pointerdown','pointerup','touchend','click','keydown'])addEventListener(ev,unlock,{capture:true,passive:true});
 BRD.audio=()=>(AC&&AC.state==='running'&&master)?{AC,master}:null;   // usado pelo quack dos patos
 const SCALES=[[0,2,4,7,9],[0,3,5,7,10],[0,2,5,7,9],[0,2,4,6,9],[0,4,7,9,12]];
 function makeVoice(){
@@ -1079,105 +1128,6 @@ function playChirp(b,gain){
  }
  return t-t0;
 }
-// ---------- sons de movimento: passos, pulo, rolar e pouso (discretos, suaves, um pouco realistas) ----------
-// Tudo é sintetizado na hora com ruído filtrado e "baques" graves bem curtos. Nada de brilho ou magia.
-// Para mudar o volume geral dos movimentos, mexa em SFX_VOL.
-const SFX_VOL=1;
-const SFX=window.SFX=(function(){
- let nb=null,lastStep=0,lastLand=0,foot=0;
- const ok=()=>AC&&AC.state==='running'&&master;
- const grass=()=>pos.x<bounds.room.x0;   // oeste da sala = pradaria; o resto é piso
- function noiseBuf(){
-  if(nb&&nb.sampleRate===AC.sampleRate)return nb;
-  const len=Math.floor(AC.sampleRate*1.5),b=AC.createBuffer(1,len,AC.sampleRate),d=b.getChannelData(0);
-  for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
-  nb=b;return b;
- }
- // rajada curta de ruído filtrado: f = frequência (f2 = destino do deslize), a = ataque, d = queda, g = volume
- function puff(t,o){
-  const s=AC.createBufferSource();s.buffer=noiseBuf();
-  const f=AC.createBiquadFilter();f.type=o.type||'bandpass';f.frequency.setValueAtTime(o.f,t);
-  if(o.f2)f.frequency.exponentialRampToValueAtTime(o.f2,t+o.a+o.d);
-  f.Q.value=o.q||.8;
-  const g=AC.createGain(),pk=Math.max(.0002,o.g*SFX_VOL);
-  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(pk,t+o.a);g.gain.exponentialRampToValueAtTime(.0001,t+o.a+o.d);
-  s.connect(f);f.connect(g);g.connect(master);
-  s.start(t,Math.random()*.9,o.a+o.d+.05);
-  s.onended=()=>{try{s.disconnect();f.disconnect();g.disconnect()}catch(e){}};
- }
- // baque grave e curto (peso do pé ou do corpo no chão)
- function thump(t,f0,f1,g,d){
-  const o=AC.createOscillator(),gg=AC.createGain(),pk=Math.max(.0002,g*SFX_VOL);o.type='sine';
-  o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+d);
-  gg.gain.setValueAtTime(.0001,t);gg.gain.exponentialRampToValueAtTime(pk,t+.006);gg.gain.exponentialRampToValueAtTime(.0001,t+d);
-  o.connect(gg);gg.connect(master);o.start(t);o.stop(t+d+.03);
-  o.onended=()=>{try{o.disconnect();gg.disconnect()}catch(e){}};
- }
- // pisada de chão: piso = sola macia com um baque; grama = roçar abafado
- function ground(t,k,v,f){
-  if(grass()){
-   puff(t,{type:'lowpass',f:320*v,q:.5,a:.01,d:.09,g:.45*k});
-   puff(t,{type:'bandpass',f:1500*v*f,q:.6,a:.014,d:.15,g:.14*k});
-  }else{
-   puff(t,{type:'bandpass',f:430*v*f,q:.9,a:.004,d:.075,g:.45*k});
-   thump(t,150*v*f,70,.11*k,.09);
-   puff(t,{type:'highpass',f:2600,q:.5,a:.002,d:.03,g:.02*k});
-  }
- }
- const api={si:-1,
-  step(speed){
-   if(!ok())return;const T=AC.currentTime;if(T-lastStep<.1)return;lastStep=T;
-   const k=Math.min(1.05,.62+speed/RUN*.45),v=.9+Math.random()*.2,f=(foot^=1)?1.06:.94;
-   ground(T+.005,k,v,f);
-  },
-  jump(){
-   if(!ok())return;const t=AC.currentTime+.005,v=.92+Math.random()*.16;
-   ground(t,.8,v,1);
-   puff(t+.015,{type:'bandpass',f:1100,f2:700,q:.7,a:.03,d:.14,g:.3});   // roupa mexendo
-  },
-  jump2(){
-   if(!ok())return;const t=AC.currentTime+.005;
-   puff(t,{type:'bandpass',f:520,f2:1250,q:.9,a:.07,d:.22,g:.35});       // corpo girando no ar
-  },
-  dive(){
-   if(!ok())return;const t=AC.currentTime+.005;
-   puff(t,{type:'bandpass',f:500,f2:900,q:.8,a:.05,d:.16,g:.3});
-  },
-  land(speed){
-   if(!ok()||speed<3.5)return;const T=AC.currentTime;if(T-lastLand<.15)return;lastLand=T;
-   const k=.2+Math.min(1,(speed-2.5)/14)*.8,t=T+.005,v=.92+Math.random()*.16;
-   if(grass()){
-    puff(t,{type:'lowpass',f:300*v,q:.6,a:.01,d:.16,g:.6*k});
-    puff(t,{type:'bandpass',f:1400*v,q:.6,a:.02,d:.2,g:.16*k});
-   }else{
-    thump(t,120*v,48,.2*k,.12);
-    puff(t,{type:'lowpass',f:420*v,q:.6,a:.004,d:.11,g:.7*k});
-    puff(t+.03,{type:'bandpass',f:900,q:.7,a:.02,d:.12,g:.2*k});          // roupa assentando
-   }
-  },
-  scrub(name,dir){
-   if(!ok())return;const t=AC.currentTime+.005,v=.93+Math.random()*.14,d=.22;
-   if(name==='Vassoura'){                                  // cerdas: chiado seco e granulado
-    puff(t,{type:'bandpass',f:(dir?2400:3000)*v,f2:(dir?3000:2400)*v,q:.5,a:.07,d,g:.11});
-    puff(t,{type:'highpass',f:4200,q:.4,a:.06,d:d*.8,g:.03});
-   }else if(name==='Esfregão'||name==='Balde'){            // molhado: chiado mais grave com um "chape" suave
-    puff(t,{type:'bandpass',f:(dir?900:1300)*v,f2:(dir?1300:900)*v,q:.6,a:.08,d,g:.22});
-    puff(t,{type:'lowpass',f:380*v,q:.5,a:.06,d,g:.3});
-   }else{                                                  // pano: roçar macio
-    puff(t,{type:'bandpass',f:(dir?1500:1900)*v,f2:(dir?1900:1500)*v,q:.5,a:.07,d,g:.15});
-   }
-  },
-  roll(){
-   if(!ok())return;const t=AC.currentTime+.005,v=.95+Math.random()*.1;
-   puff(t,{type:'bandpass',f:700,f2:1200,q:.7,a:.18,d:ROLL_T*.9,g:.3});    // roupa deslizando
-   for(const [dt,k] of [[.1,.7],[ROLL_T*.78,1]]){
-    if(grass())puff(t+dt,{type:'lowpass',f:300*v,q:.5,a:.01,d:.12,g:.5*k});
-    else{thump(t+dt,125*v,55,.1*k,.1);puff(t+dt,{type:'lowpass',f:350*v,q:.5,a:.006,d:.09,g:.5*k})}
-   }
-  }
- };
- return api;
-})();
 // ---------- copas: posição balançando com o vento (mesma conta do shader) ----------
 function sway(cx,cz){
  const ph=cx*.21+cz*.17,T=meadowU.uTime.value,Wd=meadowU.uWind.value;
@@ -1497,4 +1447,3 @@ BRD._cam=function(){
 };
 })();
 // ================= FIM PASSARINHOS =================
-// ================= FIM CAMPINA + FLORESTA =================
